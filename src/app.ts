@@ -2,6 +2,8 @@ import { Apis } from "karmajs-ws"
 import { ChainStore, PrivateKey, key as kkey } from "karmajs"
 import fetch from "node-fetch"
 import { splitOpReturn, isOpReturn } from "./blockchain";
+import * as btc from "./bitcoin"
+import * as krm from "./karma"
 
 console.log("hello")
 // console.log(Object.keys(ChainStore))
@@ -100,26 +102,40 @@ function processOne(a: IBlockchainProvider, b: IBlockchainProvider)
 	a.getIncomingTransactions((err, txs) =>
 	{
 		if (err)
-			return console.error(err)
+			return console.error(`error: ${(err && err.message) || err}`)
 		
 		txs.forEach(tx =>
 		{
 			if (!tx.receiver)
 				return console.log(`non-payable transaction: ${JSON.stringify(tx)}`)
+		})
+		let seq = txs.filter(tx => !!tx.receiver)
+		run()
+
+		function run()
+		{
+			if (!seq.length)
+				return
 			
-			console.log(tx)
+			let tx = seq.pop()
+			
+			console.log(`checking tx#${tx.id}`)
 
 			b.checkTransactionFulfilled(tx.amount, tx.id, tx.receiver, (err, fulfilled) =>
 			{
 				if (fulfilled)
 					return console.log(`skipping fulfilled transaction: ${JSON.stringify(tx)}`)
 				
-				b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, (err) =>
+				b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, (err, txId) =>
 				{
-					console.log(`sent ${tx.amount} ${tx.receiver.currency} from ${tx.currency} tx#${tx.id} to ${tx.receiver.address}`)
+					if (err)
+						return console.error(`error: ${(err && err.message) || err}`)
+					
+					console.log(`sent ${tx.amount} ${tx.receiver.currency} from ${tx.currency} tx#${tx.id} to ${tx.receiver.address} (tx id: ${txId})`)
+					run()
 				})
 			})
-		})
+		}
 	})
 }
 
@@ -169,8 +185,19 @@ function parseWallet(w: string): IBlockchainWallet
 }
 
 let BITCOIN_ADDR = "mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw"
-BITCOIN_ADDR = "mqs15Gf9bC2Wq3Gx8TEAD9t7z7zVhXnum7"
+// BITCOIN_ADDR = "mqs15Gf9bC2Wq3Gx8TEAD9t7z7zVhXnum7"
 let KARMA_ADDR = "1.2.148"
+
+btc.setAddrPk("mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw", "cQv9JPQDbkDDVkM1N6zB6UEWTnviQirYhhnm5KsSWpZvZetAzMyJ")
+
+// krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.149", 0.001)
+
+// btc.createTransaction(BITCOIN_ADDR, 12000, "k1.2.148")
+// 	.then(tx =>
+// 	{
+// 		post_btx(tx, (err, res) => err ? console.error(err) : console.log(res))
+// 	})
+// 	.catch(err => console.error(err))
 
 let providers: { [id: string]: IBlockchainProvider } = {
 	bitcoin: {
@@ -212,7 +239,15 @@ let providers: { [id: string]: IBlockchainProvider } = {
 		},
 		sendOutgoingTransaction(amount: number, txId: string, receiver: IBlockchainWallet, callback: (err, txid: string) => void)
 		{
-			return callback("not implemented yet!", undefined)
+			console.log(`outgoing bitcoin: ${amount} for tx#${txId} to (${receiver.currency})${receiver.address}`)
+
+			
+			btc.createTransaction(BITCOIN_ADDR, 12000, txId)
+				.then(tx =>
+				{
+					// post_btx(tx, (err, res) => callback(undefined, res))
+				})
+				.catch(err => callback(err, undefined))
 		},
 	},
 	karma: {
@@ -242,22 +277,31 @@ let providers: { [id: string]: IBlockchainProvider } = {
 				// .then(karmatxs => console.log(karmatxs.map(tx => tx.op[1].memo)))
 				.then(ktxs =>
 				{
+					console.log(ktxs.map())
 					let txs: any[] = ktxs
 						.filter(tx => tx && tx.id && tx.op && tx.op[1] && tx.op[1].memo) // filter out invalid txs
 						.filter(tx => tx.op[1].from == KARMA_ADDR) // incoming txs
 						.filter(tx => tx.op[1].memo.message == txId)
-					// console.log(txs)
+					console.log(txs)
 					return callback(undefined, txs.length > 0)
 				})
 				.catch(x => callback(x, undefined))
 		},
 		sendOutgoingTransaction(amount: number, txId: string, receiver: IBlockchainWallet, callback: (err, txid: string) => void)
 		{
-			return callback("not implemented yet!", undefined)
+			console.log(`outgoing karma: ${amount} for tx#${txId} to (${receiver.currency})${receiver.address}`)
+			krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.147", 0.001, callback)
 		},
 	}
 }
 
+function post_btx(hex: string, callback: (err, res) => void)
+{
+	let url = `https://testnet.blockchain.info/pushtx?tx=${hex}`
+	fetch(url, { method: "POST" })
+		.then(x => x.text().then(text => callback(undefined, text)))
+		.catch(e => callback(e, undefined))
+}
 function get_binfo(url: string, callback: (err, json) => void)
 {
 	// https://testnet.blockchain.info/rawaddr/mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw
@@ -302,4 +346,22 @@ cQv9JPQDbkDDVkM1N6zB6UEWTnviQirYhhnm5KsSWpZvZetAzMyJ
 public:
 mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw
 
+ */
+
+
+/*
+Your login:
+devman10
+
+Your password:
+xswedcvfrtgb
+
+Your private key:
+5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV
+
+Public key
+KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie
+
+Private key (WIF)
+5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV
  */

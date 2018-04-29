@@ -4,6 +4,8 @@ var karmajs_ws_1 = require("karmajs-ws");
 var karmajs_1 = require("karmajs");
 var node_fetch_1 = require("node-fetch");
 var blockchain_1 = require("./blockchain");
+var btc = require("./bitcoin");
+var krm = require("./karma");
 console.log("hello");
 // console.log(Object.keys(ChainStore))
 // console.log(Object.keys(Apis.instance))
@@ -72,19 +74,29 @@ function processEverything() {
 function processOne(a, b) {
     a.getIncomingTransactions(function (err, txs) {
         if (err)
-            return console.error(err);
+            return console.error("error: " + ((err && err.message) || err));
         txs.forEach(function (tx) {
             if (!tx.receiver)
                 return console.log("non-payable transaction: " + JSON.stringify(tx));
-            console.log(tx);
+        });
+        var seq = txs.filter(function (tx) { return !!tx.receiver; });
+        run();
+        function run() {
+            if (!seq.length)
+                return;
+            var tx = seq.pop();
+            console.log("checking tx#" + tx.id);
             b.checkTransactionFulfilled(tx.amount, tx.id, tx.receiver, function (err, fulfilled) {
                 if (fulfilled)
                     return console.log("skipping fulfilled transaction: " + JSON.stringify(tx));
-                b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, function (err) {
-                    console.log("sent " + tx.amount + " " + tx.receiver.currency + " from " + tx.currency + " tx#" + tx.id + " to " + tx.receiver.address);
+                b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, function (err, txId) {
+                    if (err)
+                        return console.error("error: " + ((err && err.message) || err));
+                    console.log("sent " + tx.amount + " " + tx.receiver.currency + " from " + tx.currency + " tx#" + tx.id + " to " + tx.receiver.address + " (tx id: " + txId + ")");
+                    run();
                 });
             });
-        });
+        }
     });
 }
 function getExchangeRate(cur1, cur2, callback) {
@@ -103,8 +115,16 @@ function parseWallet(w) {
     };
 }
 var BITCOIN_ADDR = "mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw";
-BITCOIN_ADDR = "mqs15Gf9bC2Wq3Gx8TEAD9t7z7zVhXnum7";
+// BITCOIN_ADDR = "mqs15Gf9bC2Wq3Gx8TEAD9t7z7zVhXnum7"
 var KARMA_ADDR = "1.2.148";
+btc.setAddrPk("mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw", "cQv9JPQDbkDDVkM1N6zB6UEWTnviQirYhhnm5KsSWpZvZetAzMyJ");
+// krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.149", 0.001)
+// btc.createTransaction(BITCOIN_ADDR, 12000, "k1.2.148")
+// 	.then(tx =>
+// 	{
+// 		post_btx(tx, (err, res) => err ? console.error(err) : console.log(res))
+// 	})
+// 	.catch(err => console.error(err))
 var providers = {
     bitcoin: {
         getIncomingTransactions: function (callback) {
@@ -138,7 +158,12 @@ var providers = {
             });
         },
         sendOutgoingTransaction: function (amount, txId, receiver, callback) {
-            return callback("not implemented yet!", undefined);
+            console.log("outgoing bitcoin: " + amount + " for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
+            btc.createTransaction(BITCOIN_ADDR, 12000, txId)
+                .then(function (tx) {
+                // post_btx(tx, (err, res) => callback(undefined, res))
+            })
+                .catch(function (err) { return callback(err, undefined); });
         },
     },
     karma: {
@@ -164,20 +189,28 @@ var providers = {
             karmajs_ws_1.Apis.instance().history_api().exec("get_account_history", [KARMA_ADDR, "1.11.0", 100, "1.11.0"])
                 // .then(karmatxs => console.log(karmatxs.map(tx => tx.op[1].memo)))
                 .then(function (ktxs) {
+                console.log(ktxs.map());
                 var txs = ktxs
                     .filter(function (tx) { return tx && tx.id && tx.op && tx.op[1] && tx.op[1].memo; }) // filter out invalid txs
                     .filter(function (tx) { return tx.op[1].from == KARMA_ADDR; }) // incoming txs
                     .filter(function (tx) { return tx.op[1].memo.message == txId; });
-                // console.log(txs)
+                console.log(txs);
                 return callback(undefined, txs.length > 0);
             })
                 .catch(function (x) { return callback(x, undefined); });
         },
         sendOutgoingTransaction: function (amount, txId, receiver, callback) {
-            return callback("not implemented yet!", undefined);
+            console.log("outgoing karma: " + amount + " for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
+            krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.147", 0.001, callback);
         },
     }
 };
+function post_btx(hex, callback) {
+    var url = "https://testnet.blockchain.info/pushtx?tx=" + hex;
+    node_fetch_1.default(url, { method: "POST" })
+        .then(function (x) { return x.text().then(function (text) { return callback(undefined, text); }); })
+        .catch(function (e) { return callback(e, undefined); });
+}
 function get_binfo(url, callback) {
     // https://testnet.blockchain.info/rawaddr/mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw
     url = "https://testnet.blockchain.info" + url;
@@ -219,4 +252,20 @@ cQv9JPQDbkDDVkM1N6zB6UEWTnviQirYhhnm5KsSWpZvZetAzMyJ
 public:
 mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw
 
+ */
+/*
+Your login:
+devman10
+
+Your password:
+xswedcvfrtgb
+
+Your private key:
+5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV
+
+Public key
+KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie
+
+Private key (WIF)
+5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV
  */ 

@@ -3,7 +3,11 @@
     "start": "node js/app.js"
   },
   "dependencies": {
+    "@types/axios": "^0.14.0",
+    "@types/bitcoinjs-lib": "^3.3.3",
     "@types/node-fetch": "^1.6.9",
+    "axios": "^0.18.0",
+    "bitcoinjs-lib": "^3.3.2",
     "karmajs": "^0.2.50",
     "karmajs-ws": "^0.1.5",
     "node-fetch": "^2.1.2"
