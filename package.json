@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "start": "node js/app.js"
+  },
+  "dependencies": {
+    "@types/node-fetch": "^1.6.9",
+    "karmajs": "^0.2.50",
+    "karmajs-ws": "^0.1.5",
+    "node-fetch": "^2.1.2"
+  }
+}
