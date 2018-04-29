@@ -57,6 +57,11 @@ Apis.instance(karma_url, true).init_promise.then(res =>
 
 	// let a = ChainStore.getBalanceObjects("1.2.147")
 	// console.log(a)
+	/* krm.sendTransaction("1.2.147", "KRMT7d1CXuXwfNWD3ZKDhSRLWjfdbzavRwRHDhW1Kk4yDunErV2ahg", "5K1TY5RrqvEKHD2gMum2dLDzzcyDvifGd2EZvQfr7PVMdF3DTJ4", "bmqs15Gf9bC2Wq3Gx8TEAD9t7z7zVhXnum7", 85, (err, res) =>
+	{
+		console.log(err)
+		console.log(res)
+	}) */
 
 	function _go()
 	{
@@ -148,6 +153,9 @@ function processOne(a: IBlockchainProvider, b: IBlockchainProvider)
 
 			b.checkTransactionFulfilled(tx.amount, tx.id, tx.receiver, (err, fulfilled) =>
 			{
+				if (err)
+					return console.error(err)
+
 				console.log(`tx#${tx.id}: ${fulfilled ? "fulfilled" : "NEW"}`)
 				if (fulfilled)
 					return console.log(`skipping fulfilled transaction: ${JSON.stringify(tx)}`)
@@ -155,7 +163,7 @@ function processOne(a: IBlockchainProvider, b: IBlockchainProvider)
 				b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, (err, txId) =>
 				{
 					if (err)
-						return console.error(`error: ${(err && err.message) || err}`)
+						return console.error(`error: ${(err && err.message) || err}`), run()
 					
 					console.log(`sent ${tx.amount} ${tx.receiver.currency} from ${tx.currency} tx#${tx.id} to ${tx.receiver.address} (tx id: ${txId})`)
 					run()
@@ -218,7 +226,7 @@ btc.setAddrPk("mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw", "cQv9JPQDbkDDVkM1N6zB6UEWTnv
 
 // krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.149", 0.001)
 
-// btc.createTransaction(BITCOIN_ADDR, 12000, "k1.2.148")
+// btc.createTransaction(BITCOIN_ADDR, 12000, "k1.2.147")
 // 	.then(tx =>
 // 	{
 // 		post_btx(tx, (err, res) => err ? console.error(err) : console.log(res))
@@ -231,8 +239,11 @@ let providers: { [id: string]: IBlockchainProvider } = {
 		{
 			get_binfo(`/rawaddr/${BITCOIN_ADDR}`, (err, res) =>
 			{
+				if (err)
+					return callback(err, undefined)
+				
 				if (!res || !res.txs)
-					return callback("invalid blockchain.info response", undefined)
+					return callback(`invalid blockchain.info response ${res}`, undefined)
 				
 				let txs = res.txs.map(tx => ({
 					tx: tx.out.filter(o => o.addr == BITCOIN_ADDR)[0],
@@ -256,21 +267,36 @@ let providers: { [id: string]: IBlockchainProvider } = {
 		{
 			get_binfo(`/rawaddr/${BITCOIN_ADDR}`, (err, res) =>
 			{
-				if (!res || !res.txs)
-					return callback("invalid blockchain.info response", undefined)
+				if (err)
+					return callback(err, undefined)
 				
-				let txIds: string[] = res.txs.map(tx => splitOpReturn((tx.out.filter(isOpReturn)[0] || { script: "" }).script).data)
+				if (!res || !res.txs)
+					return callback(`invalid blockchain.info response ${res}`, undefined)
+				
+				console.log(`checking tx#${txId}:`)
+				let txs: any[] = res.txs.map(tx => tx.out.filter(isOpReturn)[0]).filter(x => !!x)
+				// console.log(txs)
+				let scripts = txs.map(x => x.script)
+				// console.log(`scripts: ${scripts.length}`)
+				// console.log(scripts)
+				let op_returns = txs.map(x => splitOpReturn(x.script))
+				// console.log(`op_returns: ${op_returns.length}`)
+				// console.log(op_returns)
+				
+				let txIds: string[] = op_returns.map(x => x && x.data)
 				return callback(undefined, txIds.filter(x => x == txId).length > 0)
 			})
 		},
 		sendOutgoingTransaction(amount: number, txId: string, receiver: IBlockchainWallet, callback: (err, txid: string) => void)
 		{
-			console.log(`outgoing bitcoin: ${amount} for tx#${txId} to (${receiver.currency})${receiver.address}`)
+			amount = Math.floor(amount)
+			console.log(`outgoing bitcoin: ${amount / 100000000} for tx#${txId} to (${receiver.currency})${receiver.address}`)
 			
 			btc.createTransaction(receiver.address, amount, txId)
 				.then(tx =>
 				{
-					// post_btx(tx, (err, res) => callback(undefined, res))
+					console.log(tx)
+					post_btx(tx, (err, res) => callback(undefined, res))
 				})
 				.catch(err => callback(err, undefined))
 		},
@@ -282,13 +308,14 @@ let providers: { [id: string]: IBlockchainProvider } = {
 				// .then(karmatxs => console.log(karmatxs.map(tx => tx.op[1].memo)))
 				.then(ktxs =>
 				{
+					// console.log(ktxs.map(tx => ({ id: tx.id, op: tx.op[1], amount: tx.op[1].amount, memo: tx.op[1].memo })))
 					let txs = ktxs
 						.filter(tx => tx && tx.id && tx.op && tx.op[1] && tx.op[1].memo) // filter out invalid txs
 						.filter(tx => tx.op[1].to == KARMA_ADDR) // incoming txs
 						.map(tx => ({
 							id: tx.id.replace(/^1\.11\./, ''),
 							currency: "karma", // TODO: CHANGE TO ASSET ID!!! (fetch data from karma to local ChainStore on the start, compare ids of currencies to names)
-							amount: tx.op[1].amount.amount * karmaPrice,
+							amount: tx.op[1].amount.amount * 10000 * karmaPrice,
 							receiver: parseWallet(hex2a(tx.op[1].memo.message)),
 						}))
 					// console.log(txs)
@@ -305,12 +332,12 @@ let providers: { [id: string]: IBlockchainProvider } = {
 				// .then(karmatxs => console.log(karmatxs.map(tx => tx.op[1].memo)))
 				.then(ktxs =>
 				{
-					console.log(ktxs.map())
+					// console.log(ktxs.map())
 					let txs: any[] = ktxs
 						.filter(tx => tx && tx.id && tx.op && tx.op[1] && tx.op[1].memo) // filter out invalid txs
 						.filter(tx => tx.op[1].from == KARMA_ADDR) // incoming txs
 						.filter(tx => tx.op[1].memo.message == txId)
-					console.log(txs)
+					// console.log(txs)
 					return callback(undefined, txs.length > 0)
 				})
 				.catch(x => callback(x, undefined))
@@ -322,7 +349,7 @@ let providers: { [id: string]: IBlockchainProvider } = {
 			console.log(`outgoing karma: ${amount} (${btcam} BTC) for tx#${txId} to (${receiver.currency})${receiver.address}`)
 			if (receiver.address == KARMA_ADDR)
 				return processedBtcTransactions[txId] = true, callback("unfortunately, sending karma to self is not possible", undefined)
-			krm.sendTransaction(KARMA_ADDR, "KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", receiver.address, amount, (err, res) =>
+			krm.sendTransaction(KARMA_ADDR, "KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", receiver.address, amount, txId, (err, res) =>
 			{
 				processedBtcTransactions[txId] = true
 			})

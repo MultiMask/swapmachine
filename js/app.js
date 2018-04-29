@@ -45,6 +45,11 @@ karmajs_ws_1.Apis.instance(karma_url, true).init_promise.then(function (res) {
     // Apis.instance().db_api().exec("get_balance_objects", [[address]])
     // let a = ChainStore.getBalanceObjects("1.2.147")
     // console.log(a)
+    /* krm.sendTransaction("1.2.147", "KRMT7d1CXuXwfNWD3ZKDhSRLWjfdbzavRwRHDhW1Kk4yDunErV2ahg", "5K1TY5RrqvEKHD2gMum2dLDzzcyDvifGd2EZvQfr7PVMdF3DTJ4", "bmqs15Gf9bC2Wq3Gx8TEAD9t7z7zVhXnum7", 85, (err, res) =>
+    {
+        console.log(err)
+        console.log(res)
+    }) */
     function _go() {
         updateKarmaRate(function (err, price) {
             console.log("karma price: " + price);
@@ -104,12 +109,14 @@ function processOne(a, b) {
             var tx = seq.pop();
             console.log("checking tx#" + tx.id);
             b.checkTransactionFulfilled(tx.amount, tx.id, tx.receiver, function (err, fulfilled) {
+                if (err)
+                    return console.error(err);
                 console.log("tx#" + tx.id + ": " + (fulfilled ? "fulfilled" : "NEW"));
                 if (fulfilled)
                     return console.log("skipping fulfilled transaction: " + JSON.stringify(tx));
                 b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, function (err, txId) {
                     if (err)
-                        return console.error("error: " + ((err && err.message) || err));
+                        return console.error("error: " + ((err && err.message) || err)), run();
                     console.log("sent " + tx.amount + " " + tx.receiver.currency + " from " + tx.currency + " tx#" + tx.id + " to " + tx.receiver.address + " (tx id: " + txId + ")");
                     run();
                 });
@@ -137,7 +144,7 @@ var BITCOIN_ADDR = "mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw";
 var KARMA_ADDR = "1.2.148";
 btc.setAddrPk("mjwpsJcLGWX67FV9LhFkt3Ke6b2zEvDuUw", "cQv9JPQDbkDDVkM1N6zB6UEWTnviQirYhhnm5KsSWpZvZetAzMyJ");
 // krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.149", 0.001)
-// btc.createTransaction(BITCOIN_ADDR, 12000, "k1.2.148")
+// btc.createTransaction(BITCOIN_ADDR, 12000, "k1.2.147")
 // 	.then(tx =>
 // 	{
 // 		post_btx(tx, (err, res) => err ? console.error(err) : console.log(res))
@@ -147,8 +154,10 @@ var providers = {
     bitcoin: {
         getIncomingTransactions: function (callback) {
             get_binfo("/rawaddr/" + BITCOIN_ADDR, function (err, res) {
+                if (err)
+                    return callback(err, undefined);
                 if (!res || !res.txs)
-                    return callback("invalid blockchain.info response", undefined);
+                    return callback("invalid blockchain.info response " + res, undefined);
                 var txs = res.txs.map(function (tx) { return ({
                     tx: tx.out.filter(function (o) { return o.addr == BITCOIN_ADDR; })[0],
                     info: Object.assign({}, tx, { inputs: undefined, out: undefined }),
@@ -169,17 +178,30 @@ var providers = {
         },
         checkTransactionFulfilled: function (amount, txId, receiver, callback) {
             get_binfo("/rawaddr/" + BITCOIN_ADDR, function (err, res) {
+                if (err)
+                    return callback(err, undefined);
                 if (!res || !res.txs)
-                    return callback("invalid blockchain.info response", undefined);
-                var txIds = res.txs.map(function (tx) { return blockchain_1.splitOpReturn((tx.out.filter(blockchain_1.isOpReturn)[0] || { script: "" }).script).data; });
+                    return callback("invalid blockchain.info response " + res, undefined);
+                console.log("checking tx#" + txId + ":");
+                var txs = res.txs.map(function (tx) { return tx.out.filter(blockchain_1.isOpReturn)[0]; }).filter(function (x) { return !!x; });
+                // console.log(txs)
+                var scripts = txs.map(function (x) { return x.script; });
+                // console.log(`scripts: ${scripts.length}`)
+                // console.log(scripts)
+                var op_returns = txs.map(function (x) { return blockchain_1.splitOpReturn(x.script); });
+                // console.log(`op_returns: ${op_returns.length}`)
+                // console.log(op_returns)
+                var txIds = op_returns.map(function (x) { return x && x.data; });
                 return callback(undefined, txIds.filter(function (x) { return x == txId; }).length > 0);
             });
         },
         sendOutgoingTransaction: function (amount, txId, receiver, callback) {
-            console.log("outgoing bitcoin: " + amount + " for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
+            amount = Math.floor(amount);
+            console.log("outgoing bitcoin: " + amount / 100000000 + " for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
             btc.createTransaction(receiver.address, amount, txId)
                 .then(function (tx) {
-                // post_btx(tx, (err, res) => callback(undefined, res))
+                console.log(tx);
+                post_btx(tx, function (err, res) { return callback(undefined, res); });
             })
                 .catch(function (err) { return callback(err, undefined); });
         },
@@ -189,13 +211,14 @@ var providers = {
             karmajs_ws_1.Apis.instance().history_api().exec("get_account_history", [KARMA_ADDR, "1.11.0", 100, "1.11.0"])
                 // .then(karmatxs => console.log(karmatxs.map(tx => tx.op[1].memo)))
                 .then(function (ktxs) {
+                // console.log(ktxs.map(tx => ({ id: tx.id, op: tx.op[1], amount: tx.op[1].amount, memo: tx.op[1].memo })))
                 var txs = ktxs
                     .filter(function (tx) { return tx && tx.id && tx.op && tx.op[1] && tx.op[1].memo; }) // filter out invalid txs
                     .filter(function (tx) { return tx.op[1].to == KARMA_ADDR; }) // incoming txs
                     .map(function (tx) { return ({
                     id: tx.id.replace(/^1\.11\./, ''),
                     currency: "karma",
-                    amount: tx.op[1].amount.amount * karmaPrice,
+                    amount: tx.op[1].amount.amount * 10000 * karmaPrice,
                     receiver: parseWallet(hex2a(tx.op[1].memo.message)),
                 }); });
                 // console.log(txs)
@@ -209,12 +232,12 @@ var providers = {
             karmajs_ws_1.Apis.instance().history_api().exec("get_account_history", [KARMA_ADDR, "1.11.0", 100, "1.11.0"])
                 // .then(karmatxs => console.log(karmatxs.map(tx => tx.op[1].memo)))
                 .then(function (ktxs) {
-                console.log(ktxs.map());
+                // console.log(ktxs.map())
                 var txs = ktxs
                     .filter(function (tx) { return tx && tx.id && tx.op && tx.op[1] && tx.op[1].memo; }) // filter out invalid txs
                     .filter(function (tx) { return tx.op[1].from == KARMA_ADDR; }) // incoming txs
                     .filter(function (tx) { return tx.op[1].memo.message == txId; });
-                console.log(txs);
+                // console.log(txs)
                 return callback(undefined, txs.length > 0);
             })
                 .catch(function (x) { return callback(x, undefined); });
@@ -225,7 +248,7 @@ var providers = {
             console.log("outgoing karma: " + amount + " (" + btcam + " BTC) for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
             if (receiver.address == KARMA_ADDR)
                 return processedBtcTransactions[txId] = true, callback("unfortunately, sending karma to self is not possible", undefined);
-            krm.sendTransaction(KARMA_ADDR, "KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", receiver.address, amount, function (err, res) {
+            krm.sendTransaction(KARMA_ADDR, "KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", receiver.address, amount, txId, function (err, res) {
                 processedBtcTransactions[txId] = true;
             });
         },
