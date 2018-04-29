@@ -1,6 +1,6 @@
 import { TransactionBuilder, PrivateKey, TransactionHelper } from "karmajs"
 
-export function sendTransaction(pubKey: string, privateKey: string, to: string, amount: number, callback: (err, res) => void)
+export function sendTransaction(from: string, pubKey: string, privateKey: string, to: string, amount: number, callback: (err, res) => void)
 {
 	function toHex(str)
 	{
@@ -17,7 +17,7 @@ export function sendTransaction(pubKey: string, privateKey: string, to: string, 
 	
 	let operationParams = {
 		fee: {amount: 0, asset_id: '1.3.0'},
-		from: '1.2.148',
+		from,
 		to,
 		amount: {amount: Math.floor(amount * Math.pow(10, precision)), asset_id: '1.3.0'},
 		/* memo: {

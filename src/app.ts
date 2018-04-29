@@ -58,13 +58,33 @@ Apis.instance(karma_url, true).init_promise.then(res =>
 	// let a = ChainStore.getBalanceObjects("1.2.147")
 	// console.log(a)
 
-	setInterval(processEverything, 10000)
+	function _go()
+	{
+		updateKarmaRate((err, price) =>
+		{
+			console.log(`karma price: ${price}`)
+			karmaPrice = price
+			processEverything()
+		})
+	}
+	
+	setInterval(_go, 10000)
+	_go()
+
 
 	ChainStore.init().then(() =>
 	{
 		ChainStore.subscribe(updateState)
 	})
 })
+
+function updateKarmaRate(callback: (err, price: number) => void)
+{
+	fetch(`https://api.coinmarketcap.com/v1/ticker/karma/`).then(x => x.json()).then(x =>
+	{
+		callback(undefined, x[0].price_btc)
+	}).catch(x => callback(x, undefined))
+}
 
 function hex2a(hex: string)
 {
@@ -90,6 +110,8 @@ function updateListener(object)
 }
 
 
+// I'm so fucking sorry for these state variables
+let karmaPrice = 0
 let processedBtcTransactions = {}
 
 function processEverything()
@@ -244,9 +266,8 @@ let providers: { [id: string]: IBlockchainProvider } = {
 		sendOutgoingTransaction(amount: number, txId: string, receiver: IBlockchainWallet, callback: (err, txid: string) => void)
 		{
 			console.log(`outgoing bitcoin: ${amount} for tx#${txId} to (${receiver.currency})${receiver.address}`)
-
 			
-			btc.createTransaction(BITCOIN_ADDR, 12000, txId)
+			btc.createTransaction(receiver.address, amount, txId)
 				.then(tx =>
 				{
 					// post_btx(tx, (err, res) => callback(undefined, res))
@@ -267,7 +288,7 @@ let providers: { [id: string]: IBlockchainProvider } = {
 						.map(tx => ({
 							id: tx.id.replace(/^1\.11\./, ''),
 							currency: "karma", // TODO: CHANGE TO ASSET ID!!! (fetch data from karma to local ChainStore on the start, compare ids of currencies to names)
-							amount: tx.op[1].amount.amount,
+							amount: tx.op[1].amount.amount * karmaPrice,
 							receiver: parseWallet(hex2a(tx.op[1].memo.message)),
 						}))
 					// console.log(txs)
@@ -296,8 +317,12 @@ let providers: { [id: string]: IBlockchainProvider } = {
 		},
 		sendOutgoingTransaction(amount: number, txId: string, receiver: IBlockchainWallet, callback: (err, txid: string) => void)
 		{
-			console.log(`outgoing karma: ${amount} for tx#${txId} to (${receiver.currency})${receiver.address}`)
-			krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.147", 0.001, (err, res) =>
+			let btcam = amount / 100000000
+			amount = Math.floor(btcam / karmaPrice)
+			console.log(`outgoing karma: ${amount} (${btcam} BTC) for tx#${txId} to (${receiver.currency})${receiver.address}`)
+			if (receiver.address == KARMA_ADDR)
+				return processedBtcTransactions[txId] = true, callback("unfortunately, sending karma to self is not possible", undefined)
+			krm.sendTransaction(KARMA_ADDR, "KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", receiver.address, amount, (err, res) =>
 			{
 				processedBtcTransactions[txId] = true
 			})

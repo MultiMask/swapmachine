@@ -45,11 +45,24 @@ karmajs_ws_1.Apis.instance(karma_url, true).init_promise.then(function (res) {
     // Apis.instance().db_api().exec("get_balance_objects", [[address]])
     // let a = ChainStore.getBalanceObjects("1.2.147")
     // console.log(a)
-    setInterval(processEverything, 10000);
+    function _go() {
+        updateKarmaRate(function (err, price) {
+            console.log("karma price: " + price);
+            karmaPrice = price;
+            processEverything();
+        });
+    }
+    setInterval(_go, 10000);
+    _go();
     karmajs_1.ChainStore.init().then(function () {
         karmajs_1.ChainStore.subscribe(updateState);
     });
 });
+function updateKarmaRate(callback) {
+    node_fetch_1.default("https://api.coinmarketcap.com/v1/ticker/karma/").then(function (x) { return x.json(); }).then(function (x) {
+        callback(undefined, x[0].price_btc);
+    }).catch(function (x) { return callback(x, undefined); });
+}
 function hex2a(hex) {
     if (!hex || (typeof hex !== "string"))
         return undefined;
@@ -65,6 +78,8 @@ function updateState(object) {
 function updateListener(object) {
     console.log("set_subscribe_callback:\n", object);
 }
+// I'm so fucking sorry for these state variables
+var karmaPrice = 0;
 var processedBtcTransactions = {};
 function processEverything() {
     var a = providers.bitcoin;
@@ -162,7 +177,7 @@ var providers = {
         },
         sendOutgoingTransaction: function (amount, txId, receiver, callback) {
             console.log("outgoing bitcoin: " + amount + " for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
-            btc.createTransaction(BITCOIN_ADDR, 12000, txId)
+            btc.createTransaction(receiver.address, amount, txId)
                 .then(function (tx) {
                 // post_btx(tx, (err, res) => callback(undefined, res))
             })
@@ -180,7 +195,7 @@ var providers = {
                     .map(function (tx) { return ({
                     id: tx.id.replace(/^1\.11\./, ''),
                     currency: "karma",
-                    amount: tx.op[1].amount.amount,
+                    amount: tx.op[1].amount.amount * karmaPrice,
                     receiver: parseWallet(hex2a(tx.op[1].memo.message)),
                 }); });
                 // console.log(txs)
@@ -205,8 +220,12 @@ var providers = {
                 .catch(function (x) { return callback(x, undefined); });
         },
         sendOutgoingTransaction: function (amount, txId, receiver, callback) {
-            console.log("outgoing karma: " + amount + " for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
-            krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.147", 0.001, function (err, res) {
+            var btcam = amount / 100000000;
+            amount = Math.floor(btcam / karmaPrice);
+            console.log("outgoing karma: " + amount + " (" + btcam + " BTC) for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
+            if (receiver.address == KARMA_ADDR)
+                return processedBtcTransactions[txId] = true, callback("unfortunately, sending karma to self is not possible", undefined);
+            krm.sendTransaction(KARMA_ADDR, "KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", receiver.address, amount, function (err, res) {
                 processedBtcTransactions[txId] = true;
             });
         },
