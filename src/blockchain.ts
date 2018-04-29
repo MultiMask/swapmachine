@@ -1,6 +1,9 @@
 export const OP_RETURN = "6a"
 export function isOpReturn(tx: string | { script: string }): boolean
 {
+    if (!tx)
+        return false
+    
 	let script: string = (typeof tx === "string") ? tx : tx.script
 	if (!script)
 		return false

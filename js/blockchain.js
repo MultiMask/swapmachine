@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OP_RETURN = "6a";
 function isOpReturn(tx) {
+    if (!tx)
+        return false;
     var script = (typeof tx === "string") ? tx : tx.script;
     if (!script)
         return false;
