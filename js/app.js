@@ -10,10 +10,10 @@ console.log("hello");
 // console.log(Object.keys(ChainStore))
 // console.log(Object.keys(Apis.instance))
 // console.log(Apis.instance.toString())
-var seed = "MULTIMASK KEY 1";
-var pkey = karmajs_1.PrivateKey.fromSeed(karmajs_1.key.normalize_brainKey(seed));
-console.log("\nPrivate key: " + pkey.toWif());
-console.log("Public key: " + pkey.toPublicKey().toString() + "\n");
+// let seed = "MULTIMASK KEY 1"
+// let pkey = PrivateKey.fromSeed( kkey.normalize_brainKey(seed) )
+// console.log(`\nPrivate key: ${pkey.toWif()}`)
+// console.log(`Public key: ${pkey.toPublicKey().toString()}\n`)
 var karma_url = "wss://testnet-node.karma.red";
 // karma_url = "wss://eu.openledger.info/ws"
 karmajs_ws_1.Apis.instance(karma_url, true).init_promise.then(function (res) {
@@ -45,7 +45,7 @@ karmajs_ws_1.Apis.instance(karma_url, true).init_promise.then(function (res) {
     // Apis.instance().db_api().exec("get_balance_objects", [[address]])
     // let a = ChainStore.getBalanceObjects("1.2.147")
     // console.log(a)
-    processEverything();
+    setInterval(processEverything, 10000);
     karmajs_1.ChainStore.init().then(function () {
         karmajs_1.ChainStore.subscribe(updateState);
     });
@@ -65,6 +65,7 @@ function updateState(object) {
 function updateListener(object) {
     console.log("set_subscribe_callback:\n", object);
 }
+var processedBtcTransactions = {};
 function processEverything() {
     var a = providers.bitcoin;
     var b = providers.karma;
@@ -80,6 +81,7 @@ function processOne(a, b) {
                 return console.log("non-payable transaction: " + JSON.stringify(tx));
         });
         var seq = txs.filter(function (tx) { return !!tx.receiver; });
+        console.log("seq: " + seq);
         run();
         function run() {
             if (!seq.length)
@@ -87,6 +89,7 @@ function processOne(a, b) {
             var tx = seq.pop();
             console.log("checking tx#" + tx.id);
             b.checkTransactionFulfilled(tx.amount, tx.id, tx.receiver, function (err, fulfilled) {
+                console.log("tx#" + tx.id + ": " + (fulfilled ? "fulfilled" : "NEW"));
                 if (fulfilled)
                     return console.log("skipping fulfilled transaction: " + JSON.stringify(tx));
                 b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, function (err, txId) {
@@ -186,6 +189,8 @@ var providers = {
                 .catch(function (x) { return callback(x, undefined); });
         },
         checkTransactionFulfilled: function (amount, txId, receiver, callback) {
+            if (processedBtcTransactions[txId])
+                return callback(undefined, true);
             karmajs_ws_1.Apis.instance().history_api().exec("get_account_history", [KARMA_ADDR, "1.11.0", 100, "1.11.0"])
                 // .then(karmatxs => console.log(karmatxs.map(tx => tx.op[1].memo)))
                 .then(function (ktxs) {
@@ -201,7 +206,9 @@ var providers = {
         },
         sendOutgoingTransaction: function (amount, txId, receiver, callback) {
             console.log("outgoing karma: " + amount + " for tx#" + txId + " to (" + receiver.currency + ")" + receiver.address);
-            krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.147", 0.001, callback);
+            krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.147", 0.001, function (err, res) {
+                processedBtcTransactions[txId] = true;
+            });
         },
     }
 };

@@ -11,11 +11,11 @@ console.log("hello")
 // console.log(Apis.instance.toString())
 
 
-let seed = "MULTIMASK KEY 1"
-let pkey = PrivateKey.fromSeed( kkey.normalize_brainKey(seed) )
+// let seed = "MULTIMASK KEY 1"
+// let pkey = PrivateKey.fromSeed( kkey.normalize_brainKey(seed) )
 
-console.log(`\nPrivate key: ${pkey.toWif()}`)
-console.log(`Public key: ${pkey.toPublicKey().toString()}\n`)
+// console.log(`\nPrivate key: ${pkey.toWif()}`)
+// console.log(`Public key: ${pkey.toPublicKey().toString()}\n`)
 
 let karma_url = "wss://testnet-node.karma.red"
 // karma_url = "wss://eu.openledger.info/ws"
@@ -58,7 +58,7 @@ Apis.instance(karma_url, true).init_promise.then(res =>
 	// let a = ChainStore.getBalanceObjects("1.2.147")
 	// console.log(a)
 
-	processEverything()
+	setInterval(processEverything, 10000)
 
 	ChainStore.init().then(() =>
 	{
@@ -90,6 +90,8 @@ function updateListener(object)
 }
 
 
+let processedBtcTransactions = {}
+
 function processEverything()
 {
 	let a = providers.bitcoin
@@ -110,6 +112,7 @@ function processOne(a: IBlockchainProvider, b: IBlockchainProvider)
 				return console.log(`non-payable transaction: ${JSON.stringify(tx)}`)
 		})
 		let seq = txs.filter(tx => !!tx.receiver)
+		console.log(`seq: ${seq}`)
 		run()
 
 		function run()
@@ -123,6 +126,7 @@ function processOne(a: IBlockchainProvider, b: IBlockchainProvider)
 
 			b.checkTransactionFulfilled(tx.amount, tx.id, tx.receiver, (err, fulfilled) =>
 			{
+				console.log(`tx#${tx.id}: ${fulfilled ? "fulfilled" : "NEW"}`)
 				if (fulfilled)
 					return console.log(`skipping fulfilled transaction: ${JSON.stringify(tx)}`)
 				
@@ -273,6 +277,9 @@ let providers: { [id: string]: IBlockchainProvider } = {
 		},
 		checkTransactionFulfilled(amount: number, txId: string, receiver: IBlockchainWallet, callback: (err, fulfilled: boolean) => void)
 		{
+			if (processedBtcTransactions[txId])
+				return callback(undefined, true)
+
 			Apis.instance().history_api().exec("get_account_history", [KARMA_ADDR, "1.11.0", 100, "1.11.0"])
 				// .then(karmatxs => console.log(karmatxs.map(tx => tx.op[1].memo)))
 				.then(ktxs =>
@@ -290,7 +297,10 @@ let providers: { [id: string]: IBlockchainProvider } = {
 		sendOutgoingTransaction(amount: number, txId: string, receiver: IBlockchainWallet, callback: (err, txid: string) => void)
 		{
 			console.log(`outgoing karma: ${amount} for tx#${txId} to (${receiver.currency})${receiver.address}`)
-			krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.147", 0.001, callback)
+			krm.sendTransaction("KRMT6y4SbupANg4iPAQ9YNh7pSkTYTPcZ8e8tuDszZezCFDXiP25ie", "5KZNJefhU42LVUpsRn5nSYyiBPXhEBxCG5R3L4W9VtWbu2J7YSV", "1.2.147", 0.001, (err, res) =>
+			{
+				processedBtcTransactions[txId] = true
+			})
 		},
 	}
 }
