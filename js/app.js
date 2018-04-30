@@ -113,7 +113,7 @@ function processOne(a, b) {
                     return console.error(err);
                 console.log("tx#" + tx.id + ": " + (fulfilled ? "fulfilled" : "NEW"));
                 if (fulfilled)
-                    return console.log("skipping fulfilled transaction: " + JSON.stringify(tx));
+                    return console.log("skipping fulfilled transaction: " + JSON.stringify(tx)), run();
                 b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, function (err, txId) {
                     if (err)
                         return console.error("error: " + ((err && err.message) || err)), run();

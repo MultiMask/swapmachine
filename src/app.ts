@@ -158,7 +158,7 @@ function processOne(a: IBlockchainProvider, b: IBlockchainProvider)
 
 				console.log(`tx#${tx.id}: ${fulfilled ? "fulfilled" : "NEW"}`)
 				if (fulfilled)
-					return console.log(`skipping fulfilled transaction: ${JSON.stringify(tx)}`)
+					return console.log(`skipping fulfilled transaction: ${JSON.stringify(tx)}`), run()
 				
 				b.sendOutgoingTransaction(tx.amount, tx.id, tx.receiver, (err, txId) =>
 				{
